@@ -1,0 +1,25 @@
+{
+    #main;
+    #name: wallp;
+    #desc: Wallpaper changer;
+}
+{
+    #name: list;
+    #desc: List all monitors connected with;
+}
+{
+    #name: set;
+    #desc: Set wallpaper per monitors;
+
+    #arg;
+    meta: MONITOR;
+    desc: monitor number. see wallp list;
+    type: number;
+    default: 0;
+
+    #arg;
+    meta: WALLPAPER;
+    desc: wallpaper path;
+    type: string;
+    default:;
+}
