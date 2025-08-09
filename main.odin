@@ -10,11 +10,6 @@ import win "core:sys/windows"
 foreign import "system:ole32.lib"
 foreign import "system:user32.lib"
 
-foreign import kernel32 "system:kernel32.lib"
-foreign kernel32 {
-    lstrlenW :: proc "stdcall" (s: win.LPCWSTR) -> int ---
-}
-
 IUnknown	    :: win.IUnknown
 IUnknown_VTable :: win.IUnknown_VTable
 
@@ -66,7 +61,7 @@ IDesktopWallpaperVtbl :: struct {
 
 DesktopManager :: struct {
     inner: ^IDesktopWallpaper,
-    monitors: []win.LPWSTR,
+    monitors: []cstring16,
     monitors_len: uintptr,
 }
 
@@ -105,9 +100,11 @@ initDesktop :: proc() -> (self: DesktopManager, err: WallpErr) {
         return
     }
 
-    self.monitors = make([]win.LPWSTR, monitors_len)
+    self.monitors = make([]cstring16, monitors_len)
     defer if err != nil {
-        for i in 0..<self.monitors_len do win.CoTaskMemFree(self.monitors[i])
+        for i in 0..<self.monitors_len {
+            win.CoTaskMemFree(transmute([^]u16)self.monitors[i])
+        }
         delete(self.monitors)
     }
 
@@ -121,7 +118,7 @@ initDesktop :: proc() -> (self: DesktopManager, err: WallpErr) {
         }
         defer if err != nil do win.CoTaskMemFree(monitor_id)
 
-        self.monitors[self.monitors_len] = monitor_id
+        self.monitors[self.monitors_len] = transmute(cstring16)monitor_id
         self.monitors_len += 1
     }
 
@@ -129,7 +126,9 @@ initDesktop :: proc() -> (self: DesktopManager, err: WallpErr) {
 }
 
 deinitDesktop :: proc(self: ^DesktopManager) {
-    for i in 0..<self.monitors_len do win.CoTaskMemFree(self.monitors[i])
+    for i in 0..<self.monitors_len {
+        win.CoTaskMemFree(transmute([^]u16)self.monitors[i])
+    }
     delete(self.monitors)
     win.CoUninitialize()
 }
@@ -150,11 +149,13 @@ main :: proc() {
     switch {
     case os.args[1] == "list":
         for monitor, i in dm.monitors {
-            monitor_len := lstrlenW(monitor)
+            monitor_len := len(monitor)
             monitor_utf8 := make([]u8, monitor_len)
+            defer delete(monitor_utf8)
+
             len := unicode.decode_to_utf8(
                 monitor_utf8,
-                ([^]u16)(monitor)[0:monitor_len],
+                (transmute([^]u16)monitor)[0:monitor_len],
             )
             fmt.printf("%d: %s\n", i, transmute(string)(monitor_utf8[0:len]))
         }
@@ -179,11 +180,12 @@ main :: proc() {
         }
         defer delete(wallpaper)
 
-        wallpaper_utf16 := make([]u16, len(wallpaper))
-        defer delete(wallpaper_utf16)
+        wallpaper_utf16_buf := make([]u16, len(wallpaper))
+        defer delete(wallpaper_utf16_buf)
 
-        unicode.encode_string(wallpaper_utf16, wallpaper)
-        hr := dm.inner->SetWallpaper(dm.monitors[monitor], raw_data(wallpaper_utf16))
+        unicode.encode_string(wallpaper_utf16_buf, wallpaper)
+        wallpaper_utf16 := transmute(cstring16)(raw_data(wallpaper_utf16_buf))
+        hr := dm.inner->SetWallpaper(dm.monitors[monitor], wallpaper_utf16)
 
         if win.FAILED(hr) {
             fmt.eprintln("ERROR: failed to change wallpaper")
